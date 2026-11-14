@@ -140,7 +140,7 @@ Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, Three.js, MapLibr
 - The data cache is a JSON file in `data/`, which does not persist on serverless hosts. Use a database there.
 
 ## License
-MIT. See [LICENSE](./LICENSE).
+All rights reserved. Contact the team for permission to use this code.
 
 ---
 
