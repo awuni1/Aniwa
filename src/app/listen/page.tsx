@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mic, MapPin, Loader2, AlertTriangle, Square } from "lucide-react";
+import Link from "next/link";
+import { Mic, MapPin, Loader2, AlertTriangle, Square, ShieldCheck, Send, KeyRound, Smartphone, ChevronLeft, Clock } from "lucide-react";
 import { loadDetector, CLIP_SECONDS, DETECTION_THRESHOLD, TARGET_SAMPLE_RATE, type Detector, type ClipResult } from "@/lib/chainsawDetector";
 import type { ChainsawReport } from "@/lib/acoustic";
 
@@ -270,98 +271,232 @@ export default function ListenPage() {
   }
 
   const listening = status === "listening";
+  const busy = listening || status === "loading";
+  const score = lastClip?.chainsawScore ?? 0;
+  const detected = listening && lastClip !== null && score >= DETECTION_THRESHOLD;
+  // Peak mic level (0-1) drives the rings around the button.
+  const pulse = 1 + Math.min(0.45, level * 1.6);
+  const scorePct = Math.min(100, score * 100 * 2); // the meter tops out at 50% so the 15% threshold isn't squeezed into a corner
+  const thresholdPct = DETECTION_THRESHOLD * 100 * 2;
+
+  const accent = detected ? "#f87171" : "#34d399";
+  const statusLine =
+    status === "loading"
+      ? `Downloading the AI model… ${Math.round(loadPct)}%`
+      : detected
+        ? "Chainsaw detected"
+        : listening
+          ? lastClip
+            ? `Listening · last clip: ${lastClip.topLabel}`
+            : `Listening · first result in ${CLIP_SECONDS} s`
+          : "Ready to listen";
 
   return (
-    <main className="min-h-screen bg-gray-950 text-white px-4 py-6 max-w-md mx-auto">
-      <h1 className="text-xl font-semibold mb-1">Aniwa listening device</h1>
-      <p className="text-sm text-white/50 mb-6">
-        Listens for chainsaws and pins each detection on the Aniwa map. Audio is analyzed on this phone and never uploaded.
-      </p>
-
-      <label className="block text-[11px] uppercase tracking-wider text-white/40 mb-1" htmlFor="deviceName">Device name</label>
-      <input
-        id="deviceName"
-        value={deviceName}
-        onChange={(e) => setDeviceName(e.target.value)}
-        disabled={status === "listening" || status === "loading"}
-        placeholder="e.g. Kakum north ridge"
-        className="w-full bg-gray-900 border border-white/15 px-3 py-2 text-base mb-3 disabled:opacity-50"
-      />
-      <label className="block text-[11px] uppercase tracking-wider text-white/40 mb-1" htmlFor="deviceKey">Device key (if the server requires one)</label>
-      <input
-        id="deviceKey"
-        type="password"
-        value={deviceKey}
-        onChange={(e) => setDeviceKey(e.target.value)}
-        disabled={status === "listening" || status === "loading"}
-        className="w-full bg-gray-900 border border-white/15 px-3 py-2 text-base mb-5 disabled:opacity-50"
+    <main className="relative min-h-screen overflow-hidden bg-[#05080f] text-white">
+      {/* Soft glow behind the button; turns red on a detection */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-24 h-[420px] w-[420px] -translate-x-1/2 rounded-full blur-3xl transition-colors duration-700"
+        style={{ background: `radial-gradient(circle, ${detected ? "rgba(248,113,113,0.22)" : "rgba(52,211,153,0.16)"} 0%, transparent 65%)` }}
       />
 
-      {listening || status === "loading" ? (
-        <button type="button" onClick={stop} className="w-full flex items-center justify-center gap-2 bg-white/10 border border-white/20 py-3 text-base">
-          <Square size={16} /> Stop listening
-        </button>
-      ) : (
-        <button type="button" onClick={start} className="w-full flex items-center justify-center gap-2 bg-emerald-600 py-3 text-base font-medium">
-          <Mic size={18} /> Start listening
-        </button>
-      )}
+      <div className="relative mx-auto flex min-h-screen max-w-md flex-col px-4 pb-8 pt-5">
+        <header className="flex items-center justify-between">
+          <Link href="/" className="flex min-h-11 items-center gap-2 text-sm font-semibold tracking-tight">
+            <ChevronLeft size={16} className="text-white/50" aria-hidden="true" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="" width={26} height={26} className="rounded-md" />
+            Aniwa
+          </Link>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/60">
+            Listening device
+          </span>
+        </header>
 
-      {error && (
-        <p className="mt-4 flex gap-2 text-sm text-amber-300">
-          <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {error}
-        </p>
-      )}
-
-      {status === "loading" && (
-        <p className="mt-4 flex items-center gap-2 text-sm text-white/60">
-          <Loader2 size={14} className="animate-spin" /> Downloading AI model… {Math.round(loadPct)}% (first time only)
-        </p>
-      )}
-
-      {listening && (
-        <div className="mt-6 space-y-4 text-sm">
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-white/40 mb-1">Microphone level</p>
-            <div className="h-2 bg-white/10">
-              <div className="h-2 bg-emerald-500 transition-[width]" style={{ width: `${Math.min(100, level * 300)}%` }} />
-            </div>
-          </div>
-
-          <p className="flex items-center gap-2 text-white/70">
-            <MapPin size={14} />
-            {position
-              ? `${position.coords.latitude.toFixed(5)}, ${position.coords.longitude.toFixed(5)} (±${Math.round(position.coords.accuracy)} m)`
-              : "Waiting for GPS…"}
+        <section className="mt-8 text-center">
+          <h1 className="text-[22px] font-semibold leading-tight tracking-tight">Hear illegal logging as it happens</h1>
+          <p className="mx-auto mt-2 max-w-xs text-[13px] leading-relaxed text-white/55">
+            This phone listens for chainsaws and pins each one on the Aniwa map for rangers.
           </p>
+        </section>
 
-          <div className="border border-white/10 px-3 py-2.5">
-            <p className="text-[11px] uppercase tracking-wider text-white/40 mb-1">Last {CLIP_SECONDS}-second clip</p>
-            {lastClip ? (
+        {/* Main control */}
+        <div className="relative mx-auto mt-8 flex h-64 w-64 items-center justify-center">
+          {listening && (
+            <>
+              <span
+                aria-hidden="true"
+                className="absolute inset-6 rounded-full border transition-transform duration-150"
+                style={{ borderColor: `${accent}55`, transform: `scale(${pulse})` }}
+              />
+              <span
+                aria-hidden="true"
+                className="absolute inset-12 rounded-full border transition-transform duration-200"
+                style={{ borderColor: `${accent}80`, transform: `scale(${1 + (pulse - 1) * 0.6})` }}
+              />
+              <span aria-hidden="true" className="absolute inset-14 animate-ping rounded-full opacity-20" style={{ background: accent }} />
+            </>
+          )}
+          {status === "loading" && (
+            <span
+              aria-hidden="true"
+              className="absolute inset-12 rounded-full"
+              style={{ background: `conic-gradient(#34d399 ${loadPct * 3.6}deg, rgba(255,255,255,0.08) 0deg)` }}
+            />
+          )}
+          <button
+            type="button"
+            onClick={busy ? stop : start}
+            aria-label={busy ? "Stop listening" : "Start listening"}
+            className={`relative z-10 flex h-36 w-36 flex-col items-center justify-center gap-1.5 rounded-full text-sm font-semibold shadow-2xl transition-all duration-300 focus:outline-none focus-visible:ring-4 focus-visible:ring-emerald-300/50 active:scale-95 ${
+              detected
+                ? "bg-gradient-to-br from-red-400 to-red-600 shadow-red-900/50"
+                : busy
+                  ? "bg-[#0d1626] ring-1 ring-white/15"
+                  : "bg-gradient-to-br from-emerald-400 to-emerald-600 text-[#03140d] shadow-emerald-900/50 hover:from-emerald-300"
+            }`}
+          >
+            {status === "loading" ? (
               <>
-                <p className={lastClip.chainsawScore >= DETECTION_THRESHOLD ? "text-red-400 font-medium" : "text-white/80"}>
-                  Chainsaw: {Math.round(lastClip.chainsawScore * 100)}%
-                  {lastClip.chainsawScore >= DETECTION_THRESHOLD && " — detected"}
-                </p>
-                <p className="text-white/40 text-xs">Most likely sound: {lastClip.topLabel}</p>
+                <Loader2 size={30} className="animate-spin text-emerald-300" aria-hidden="true" />
+                <span className="text-white/80">{Math.round(loadPct)}%</span>
+              </>
+            ) : busy ? (
+              <>
+                <Square size={26} className="fill-current" aria-hidden="true" />
+                <span>Stop</span>
               </>
             ) : (
-              <p className="text-white/40">Listening to the first clip…</p>
+              <>
+                <Mic size={34} aria-hidden="true" />
+                <span>Start listening</span>
+              </>
             )}
-          </div>
-
-          <p className="text-white/60">
-            Detections sent: {sentCount}
-            {pendingCount > 0 && <span className="text-amber-300"> · {pendingCount} not sent yet</span>}
-          </p>
-
-          {!wakeLockOn && (
-            <p className="text-xs text-amber-300">
-              Keep this screen on: if the phone locks, iOS stops the microphone. Set Auto-Lock to Never and keep the phone charging.
-            </p>
-          )}
+          </button>
         </div>
-      )}
+
+        <p
+          className={`mt-1 text-center text-sm font-medium ${detected ? "text-red-300" : busy ? "text-emerald-300" : "text-white/60"}`}
+          aria-live="polite"
+        >
+          {statusLine}
+        </p>
+        {status === "loading" && <p className="mt-1 text-center text-[11px] text-white/40">About 86 MB, first time only</p>}
+
+        {error && (
+          <div role="alert" className="mt-5 flex gap-2.5 rounded-2xl border border-amber-400/25 bg-amber-400/[0.07] p-3.5 text-[13px] leading-relaxed text-amber-200">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            {error}
+          </div>
+        )}
+
+        {listening && (
+          <section className="mt-6 space-y-3">
+            {/* Chainsaw score meter */}
+            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+              <div className="flex items-baseline justify-between">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-white/45">Chainsaw score</p>
+                <p className={`text-2xl font-semibold tabular-nums ${detected ? "text-red-300" : "text-white"}`}>
+                  {lastClip ? `${Math.round(score * 100)}%` : "—"}
+                </p>
+              </div>
+              <div className="relative mt-3 h-2.5 rounded-full bg-white/[0.08]">
+                <div
+                  className="h-2.5 rounded-full transition-[width] duration-500"
+                  style={{ width: `${scorePct}%`, background: detected ? "linear-gradient(90deg,#fb923c,#ef4444)" : "linear-gradient(90deg,#10b981,#34d399)" }}
+                />
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1 h-[18px] w-0.5 rounded-full bg-white/70"
+                  style={{ left: `${thresholdPct}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-white/40">
+                Alerts at {Math.round(DETECTION_THRESHOLD * 100)}% (white line) · checks every {CLIP_SECONDS} seconds
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-white/45">
+                  <MapPin size={12} aria-hidden="true" /> Location
+                </p>
+                {position ? (
+                  <>
+                    <p className="mt-2 text-[13px] font-medium tabular-nums">
+                      {position.coords.latitude.toFixed(4)}, {position.coords.longitude.toFixed(4)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-white/40">±{Math.round(position.coords.accuracy)} m</p>
+                  </>
+                ) : (
+                  <p className="mt-2 flex items-center gap-1.5 text-[13px] text-white/55">
+                    <Loader2 size={12} className="animate-spin" aria-hidden="true" /> Finding GPS…
+                  </p>
+                )}
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-white/45">
+                  <Send size={12} aria-hidden="true" /> Reports
+                </p>
+                <p className="mt-2 text-2xl font-semibold tabular-nums">{sentCount}</p>
+                <p className={`mt-0.5 text-[11px] ${pendingCount > 0 ? "text-amber-300" : "text-white/40"}`}>
+                  {pendingCount > 0 ? `${pendingCount} waiting for signal` : "sent to the map"}
+                </p>
+              </div>
+            </div>
+
+            {!wakeLockOn && (
+              <p className="flex gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-[12px] leading-relaxed text-amber-200">
+                <Clock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                Keep this screen on. If the phone locks, it stops listening. Set Auto-Lock to Never and keep it charging.
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* Setup: editable before listening, a summary while listening */}
+        {busy ? (
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-[12px] text-white/45">
+            <Smartphone size={12} aria-hidden="true" /> {deviceName || "Unnamed phone"}
+            {deviceKey && <> · <KeyRound size={12} aria-hidden="true" /> key set</>}
+          </p>
+        ) : (
+          <section className="mt-7 space-y-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+            <div>
+              <label htmlFor="deviceName" className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-white/45">
+                <Smartphone size={12} aria-hidden="true" /> Phone name
+              </label>
+              <input
+                id="deviceName"
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
+                placeholder="e.g. Kakum north ridge"
+                className="w-full rounded-xl border border-white/10 bg-[#0a101d] px-3.5 py-3 text-base placeholder:text-white/30 focus:border-emerald-400/60 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label htmlFor="deviceKey" className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-white/45">
+                <KeyRound size={12} aria-hidden="true" /> Device key
+              </label>
+              <input
+                id="deviceKey"
+                type="password"
+                value={deviceKey}
+                onChange={(e) => setDeviceKey(e.target.value)}
+                placeholder="From your Aniwa admin"
+                className="w-full rounded-xl border border-white/10 bg-[#0a101d] px-3.5 py-3 text-base placeholder:text-white/30 focus:border-emerald-400/60 focus:outline-none"
+              />
+            </div>
+          </section>
+        )}
+
+        <footer className="mt-auto pt-8">
+          <p className="flex items-start justify-center gap-2 text-center text-[11px] leading-relaxed text-white/40">
+            <ShieldCheck size={13} className="mt-0.5 shrink-0 text-emerald-400/70" aria-hidden="true" />
+            Sound is checked on this phone by an AI model and never uploaded. Only the time, location and score are sent.
+          </p>
+        </footer>
+      </div>
     </main>
   );
 }
