@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleTelegramUpdate, type TgUpdate } from "@/lib/server/telegramBot";
+import { handleTelegramUpdate, webhookSecret, type TgUpdate } from "@/lib/server/telegramBot";
 import { safeEqual } from "@/lib/server/security";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const maxDuration = 30;
 // setWebhook (see README). Telegram sends the secret_token chosen at setup in
 // this header, so random callers can't make the bot talk.
 export async function POST(req: NextRequest) {
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const secret = webhookSecret();
   const got = req.headers.get("x-telegram-bot-api-secret-token");
   if (!secret || !got || !safeEqual(got, secret)) return NextResponse.json({ error: "not found" }, { status: 404 });
 

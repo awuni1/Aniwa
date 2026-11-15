@@ -14,6 +14,7 @@
 // /chainsaw shows where listening phones are, so it only answers in the chats
 // listed in TELEGRAM_CHAT_ID. Fire data is public NASA data and answers anyone.
 
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { FOREST_BELT_REGIONS, predictHotspots, type DeforestationPrediction, type TreeCoverLookup } from "@/lib/deforestationModel";
@@ -41,6 +42,16 @@ export interface TgUpdate {
 }
 
 const token = () => process.env.TELEGRAM_BOT_TOKEN;
+
+// The secret Telegram sends with every webhook call (X-Telegram-Bot-Api-
+// Secret-Token). TELEGRAM_WEBHOOK_SECRET if set; otherwise derived from the
+// bot token, which is already secret, so a deploy needs no extra setting.
+// Register the webhook with this same value (see README).
+export function webhookSecret(): string | null {
+  if (process.env.TELEGRAM_WEBHOOK_SECRET) return process.env.TELEGRAM_WEBHOOK_SECRET;
+  const t = token();
+  return t ? createHash("sha256").update(`aniwa-telegram-webhook:${t}`).digest("hex") : null;
+}
 const api = (method: string) => `https://api.telegram.org/bot${token()}/${method}`;
 
 const alertChats = () =>
