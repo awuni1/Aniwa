@@ -200,7 +200,7 @@ Tables (`acoustic_detections`, `app_state`) are created automatically on first u
 
 **Scheduled fire checks:** fire alerts are sent when Aniwa fetches new NASA FIRMS data, so a scheduler fetches it every 30 minutes even when nobody has the dashboard open:
 - **`npm run dev` / `npm start`:** a built-in timer starts with the server (log line: “fire alerts: checking NASA FIRMS every 30 minutes”). Set `FIRE_ALERT_SCHEDULE=off` to disable it.
-- **Vercel:** `vercel.json` calls `/api/cron/fires` every 30 minutes. Set `CRON_SECRET` in Vercel; it’s sent automatically as `Authorization: Bearer …`. Vercel’s free Hobby plan only allows daily cron jobs, so on Hobby use an external scheduler (for example cron-job.org) to call `GET /api/cron/fires` with the header `x-admin-key: <ADMIN_KEY>` every 30 minutes.
+- **Vercel:** `vercel.json` calls `/api/cron/fires` once a day (06:00 UTC), because Vercel’s free Hobby plan rejects any cron that runs more often (the build fails). Set `CRON_SECRET` in Vercel; it’s sent automatically as `Authorization: Bearer …`. For checks every 30 minutes, use a free external scheduler (for example cron-job.org) to call `GET /api/cron/fires` with the header `x-admin-key: <ADMIN_KEY>`. On the Pro plan you can set the schedule to `*/30 * * * *` instead.
 
 **Telegram commands:** the bot also answers questions about deforestation, using the same live data and prediction model as the dashboard:
 
