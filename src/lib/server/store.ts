@@ -12,6 +12,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Pool } from "pg";
 import type { ChainsawDetection } from "@/lib/acoustic";
+import { SUPABASE_ROOT_CA_2021 } from "@/lib/server/supabaseCa";
 
 const MAX_DETECTIONS = 500;
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -27,10 +28,20 @@ const globalForDb = globalThis as unknown as { aniwaPool?: Promise<Pool>; aniwaS
 // DATABASE_CA_CERT_PATH or as PEM text in DATABASE_CA_CERT. Without it,
 // production refuses to connect; development connects encrypted but
 // unverified, with a warning.
+function isSupabase(url: string | undefined): boolean {
+  try {
+    const host = new URL(url ?? "").hostname;
+    return host.endsWith(".supabase.com") || host.endsWith(".supabase.co");
+  } catch {
+    return false;
+  }
+}
+
 async function sslConfig(): Promise<{ ca: string; rejectUnauthorized: true } | { rejectUnauthorized: false }> {
   let ca = process.env.DATABASE_CA_CERT;
   const caPath = process.env.DATABASE_CA_CERT_PATH;
   if (!ca && caPath) ca = await fs.readFile(path.resolve(process.cwd(), caPath), "utf8");
+  if (!ca && isSupabase(process.env.DATABASE_URL)) ca = SUPABASE_ROOT_CA_2021;
   if (ca) return { ca, rejectUnauthorized: true };
   if (process.env.NODE_ENV === "production") {
     throw new Error("DATABASE_CA_CERT_PATH (or DATABASE_CA_CERT) is required in production to verify the database certificate");
