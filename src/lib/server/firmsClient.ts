@@ -1,6 +1,8 @@
 import { regionAtPoint } from "@/lib/geo";
 import { loadRegionFeatures } from "@/lib/server/ghanaRegions";
 import type { ActiveFire, FiresResponse } from "@/lib/fires";
+import { FOREST_BELT_REGIONS } from "@/lib/deforestationModel";
+import { alertNewForestFires } from "@/lib/server/alerts";
 
 // NASA FIRMS area API. Verified live on 2026-11-10: a valid MAP_KEY returns
 // CSV; the day range must be 1-5 (6+ is rejected with "Invalid day range").
@@ -48,6 +50,11 @@ async function fetchSource(key: string, source: string): Promise<Record<string, 
   return parseCsv(text);
 }
 
+// The alert started by the latest fresh fetch, so a scheduled check can wait
+// for it to finish before its process ends.
+let lastFireAlert: Promise<void> = Promise.resolve();
+export const waitForFireAlerts = () => lastFireAlert;
+
 export async function getActiveFires(): Promise<FiresResponse> {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.data;
 
@@ -88,5 +95,10 @@ export async function getActiveFires(): Promise<FiresResponse> {
   const data: FiresResponse = { available: true, fires, days: DAYS, sources: SOURCES, fetchedAt: new Date().toISOString() };
   cache = { at: Date.now(), data };
 
+  // Fresh FIRMS data: email any new forest-region fires. Runs whenever the
+  // cache refreshes (at most every 30 min, while the dashboard is open).
+  lastFireAlert = alertNewForestFires(fires.filter((f) => FOREST_BELT_REGIONS.has(f.region))).catch((err) =>
+    console.error("fire alert failed:", err),
+  );
   return data;
 }

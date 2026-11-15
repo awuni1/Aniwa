@@ -1,5 +1,5 @@
 {
-  "name": "aniwa",
+  "name": "app",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,13 +9,19 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.1.0",
+    "@types/pg": "^8.23.1",
     "@types/three": "^0.183.1",
     "@vercel/analytics": "^2.0.1",
+    "adm-zip": "^0.5.16",
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.8.0",
     "maplibre-gl": "^5.23.0",
     "next": "16.2.4",
+    "nodemailer": "^6.9.16",
+    "pg": "^8.23.1",
+    "pngjs": "^7.0.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "three": "^0.184.0",

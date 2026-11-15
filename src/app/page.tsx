@@ -5,7 +5,7 @@ import ReactDOM from "react-dom";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { motion, useInView, useScroll, useTransform, useSpring, AnimatePresence } from "framer-motion";
-import { ArrowRight, Menu, X, Moon, Sun } from "lucide-react";
+import { Menu, X, Moon, Sun } from "lucide-react";
 import PlatformStory from "@/components/PlatformStory";
 
 // Start fetching the hero GLB in parallel with the JS bundle instead of after
@@ -86,8 +86,9 @@ function DarkModeToggle() {
   const [isDark, setIsDark] = useState(true); // Default to dark
 
   useEffect(() => {
-    // Set dark mode as default on mount (state already starts as dark)
+    // Set dark mode as default on mount
     document.documentElement.classList.add("dark");
+    setIsDark(true);
   }, []);
 
   const toggleDarkMode = () => {
@@ -481,21 +482,6 @@ export default function LandingPage() {
           </motion.p>
         </div>
 
-        {/* Start mission button, far right */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.5, duration: 0.6 }}
-          className="absolute bottom-8 left-4 right-4 md:left-auto md:right-8 z-10"
-        >
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center justify-center md:justify-start gap-2 text-sm font-medium text-black w-full md:w-auto px-8 py-4 bg-gradient-to-br from-[#FFE88C] via-[#F5C518] to-[#B8860B] hover:from-[#FFF4B3] hover:via-[#FFD94A] hover:to-[#D4A017] transition-all shadow-[0_4px_20px_rgba(245,197,24,0.35)]"
-          >
-            Start mission
-            <ArrowRight size={14} />
-          </Link>
-        </motion.div>
       </section>
 
       {/* Scroll walkthrough: what Aniwa is, chapter by chapter */}

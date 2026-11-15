@@ -46,6 +46,75 @@ export interface StoryData {
 
 const BASE_H = 0.06;
 
+// Realistic Earth for chapter 1 (from the hero globe on the 3D-globe branch):
+// day/night blend from a fixed sun, city lights on the dark side, a blue rim,
+// and an opacity uniform so it can fade into the map.
+const EARTH_VERT = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
+  void main() {
+    vUv = uv;
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vPosW = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+const EARTH_FRAG = /* glsl */ `
+  uniform sampler2D dayMap;
+  uniform sampler2D nightMap;
+  uniform vec3 sunDir;
+  uniform float opacity;
+  varying vec2 vUv;
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
+  void main() {
+    vec3 n = normalize(vNormalW);
+    vec3 day = texture2D(dayMap, vUv).rgb;
+    vec3 night = texture2D(nightMap, vUv).rgb;
+    float d = dot(n, normalize(sunDir));
+    float lit = smoothstep(-0.12, 0.28, d);
+    vec3 dayCol = day * (0.3 + 0.95 * max(d, 0.0));
+    vec3 nightCol = day * 0.035 + night * vec3(1.5, 1.15, 0.7);
+    vec3 col = mix(nightCol, dayCol, lit);
+    vec3 viewDir = normalize(cameraPosition - vPosW);
+    float rim = pow(1.0 - max(dot(n, viewDir), 0.0), 3.0);
+    col += vec3(0.25, 0.55, 1.0) * rim * 0.45;
+    gl_FragColor = vec4(col, opacity);
+    #include <colorspace_fragment>
+  }
+`;
+const ATMOS_VERT = /* glsl */ `
+  varying vec3 vNormal;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const ATMOS_FRAG = /* glsl */ `
+  uniform float opacity;
+  varying vec3 vNormal;
+  void main() {
+    float intensity = pow(max(0.62 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0), 2.6);
+    gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity * 0.9 * opacity;
+  }
+`;
+
+// Point on a three.js SphereGeometry for a lat/lng (matches the texture's UVs).
+function earthPoint(lat: number, lng: number, r: number): THREE.Vector3 {
+  const la = THREE.MathUtils.degToRad(lat);
+  const lo = THREE.MathUtils.degToRad(lng);
+  return new THREE.Vector3(r * Math.cos(la) * Math.cos(lo), r * Math.sin(la), -r * Math.cos(la) * Math.sin(lo));
+}
+
+function solidTexture(r: number, g: number, b: number): THREE.DataTexture {
+  const tex = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 const regionName = (f: Feature) => f.properties.shapeName.replace(/\s+Region$/i, "");
 
 function outerRings(g: Geometry): number[][][] {
@@ -128,44 +197,84 @@ export default function StoryScene({
     const disposables: { dispose(): void }[] = [glow];
     const track = <T extends { dispose(): void }>(x: T) => (disposables.push(x), x);
 
-    // ---------- Globe (chapter 1) ----------
+    // ---------- Globe (chapter 1): realistic Earth with a Ghana beacon ----------
     const globe = new THREE.Group();
     scene.add(globe);
     const R = 2;
-    const sph = (lat: number, lng: number, r = R) => {
-      const la = THREE.MathUtils.degToRad(lat), lo = THREE.MathUtils.degToRad(lng);
-      return new THREE.Vector3(r * Math.cos(la) * Math.sin(lo), r * Math.sin(la), r * Math.cos(la) * Math.cos(lo));
+    const GHANA_LAT = 7.95;
+    const GHANA_LNG = -1.03;
+    const earthUniforms = {
+      dayMap: { value: track(solidTexture(18, 52, 86)) as THREE.Texture },
+      nightMap: { value: track(solidTexture(0, 0, 0)) as THREE.Texture },
+      sunDir: { value: new THREE.Vector3(0.8, 0.4, 0.9).normalize() },
+      opacity: { value: 1 },
     };
-    const coreMat = track(new THREE.MeshBasicMaterial({ color: 0x0a0f14, transparent: true, opacity: 0.92 }));
-    globe.add(new THREE.Mesh(track(new THREE.SphereGeometry(R * 0.985, 48, 32)), coreMat));
-    const atmoMat = track(new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.12, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }));
-    globe.add(new THREE.Mesh(track(new THREE.SphereGeometry(R * 1.12, 48, 32)), atmoMat));
+    const earth = new THREE.Mesh(
+      track(new THREE.SphereGeometry(R, 96, 64)),
+      track(new THREE.ShaderMaterial({ uniforms: earthUniforms, vertexShader: EARTH_VERT, fragmentShader: EARTH_FRAG, transparent: true })),
+    );
+    // Turn the texture so Ghana faces the camera (+z) before the scroll spin.
+    const ghanaLo = THREE.MathUtils.degToRad(GHANA_LNG);
+    earth.rotation.y = -Math.atan2(Math.cos(ghanaLo), -Math.sin(ghanaLo));
+    globe.add(earth);
 
-    const dotPos: number[] = [];
-    const N_DOTS = 4200;
-    for (let i = 0; i < N_DOTS; i++) {
-      const y = 1 - (i / (N_DOTS - 1)) * 2;
-      const r = Math.sqrt(1 - y * y);
-      const th = i * Math.PI * (3 - Math.sqrt(5));
-      dotPos.push(Math.cos(th) * r * R, y * R, Math.sin(th) * r * R);
+    const atmosUniforms = { opacity: { value: 1 } };
+    globe.add(
+      new THREE.Mesh(
+        track(new THREE.SphereGeometry(R * 1.13, 64, 48)),
+        track(
+          new THREE.ShaderMaterial({
+            uniforms: atmosUniforms,
+            vertexShader: ATMOS_VERT,
+            fragmentShader: ATMOS_FRAG,
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide,
+            transparent: true,
+            depthWrite: false,
+          }),
+        ),
+      ),
+    );
+
+    // Ghana beacon: gold dot, pulsing ring and a light beam, pinned to the surface.
+    const ghanaNormal = earthPoint(GHANA_LAT, GHANA_LNG, 1).normalize();
+    const beaconMat = (opacity: number) =>
+      track(new THREE.MeshBasicMaterial({ color: 0xf5c518, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    const beaconDotMat = beaconMat(1);
+    const beaconRingMat = beaconMat(0.8);
+    const beaconBeamMat = beaconMat(0.55);
+    const beaconDot = new THREE.Mesh(track(new THREE.SphereGeometry(0.024, 16, 12)), beaconDotMat);
+    beaconDot.position.copy(ghanaNormal).multiplyScalar(R * 1.002);
+    const beaconRing = new THREE.Mesh(track(new THREE.RingGeometry(0.032, 0.042, 48)), beaconRingMat);
+    beaconRing.position.copy(ghanaNormal).multiplyScalar(R * 1.004);
+    beaconRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ghanaNormal);
+    const beamHeight = 0.34;
+    const beaconBeam = new THREE.Mesh(track(new THREE.CylinderGeometry(0.006, 0.015, beamHeight, 12, 1, true)), beaconBeamMat);
+    beaconBeam.position.copy(ghanaNormal).multiplyScalar(R + beamHeight / 2);
+    beaconBeam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), ghanaNormal);
+    earth.add(beaconDot, beaconRing, beaconBeam);
+
+    // Earth textures (the solid placeholders above cover a failed load).
+    const texLoader = new THREE.TextureLoader();
+    const maxAniso = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+    for (const [url, uniform] of [
+      ["/textures/earth_day_2048.jpg", earthUniforms.dayMap],
+      ["/textures/earth_night_2048.png", earthUniforms.nightMap],
+    ] as const) {
+      texLoader.load(url, (tex) => {
+        if (disposed) {
+          tex.dispose();
+          return;
+        }
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = maxAniso;
+        uniform.value = track(tex);
+      });
     }
-    const dotGeo = track(new THREE.BufferGeometry());
-    dotGeo.setAttribute("position", new THREE.Float32BufferAttribute(dotPos, 3));
-    const dotMat = track(new THREE.PointsMaterial({ color: 0x9fb7cc, size: 0.045, transparent: true, opacity: 0.55, depthWrite: false }));
-    globe.add(new THREE.Points(dotGeo, dotMat));
 
-    const ghanaDotMat = track(new THREE.PointsMaterial({ color: 0xf5c518, size: 0.03, transparent: true, depthWrite: false }));
-    const ghanaDotGeo = track(new THREE.BufferGeometry());
-    globe.add(new THREE.Points(ghanaDotGeo, ghanaDotMat));
-    // Pulsing marker ring around Ghana so it reads at globe scale
-    const markerMat = track(new THREE.MeshBasicMaterial({ color: 0xf5c518, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
-    const marker = new THREE.Mesh(track(new THREE.RingGeometry(0.92, 1, 48)), markerMat);
-    marker.position.copy(sph(7.95, -1.03, R * 1.01));
-    marker.lookAt(sph(7.95, -1.03, R * 2));
-    globe.add(marker);
-    // Face Ghana (≈8°N, 1°W) toward the camera: spin by longitude, then tilt by latitude.
+    // Tilt so Ghana's latitude faces the camera; the scroll spin turns it into view.
     globe.rotation.order = "XYZ";
-    globe.rotation.x = THREE.MathUtils.degToRad(8);
+    globe.rotation.x = THREE.MathUtils.degToRad(GHANA_LAT);
 
     // Satellite carried over from the hero, orbiting the globe.
     let satellite: THREE.Object3D | null = null;
@@ -269,17 +378,6 @@ export default function StoryScene({
         const features = geo.features;
         regionNames = features.map(regionName);
 
-        // Highlight Ghana on the globe
-        const gp: number[] = [];
-        for (let lat = 4.6; lat <= 11.2; lat += 0.22) {
-          for (let lng = -3.3; lng <= 1.25; lng += 0.22) {
-            if (features.some((f) => pointInGeometry({ lat, lng }, f.geometry))) {
-              const v = sph(lat, lng, R * 1.004);
-              gp.push(v.x, v.y, v.z);
-            }
-          }
-        }
-        ghanaDotGeo.setAttribute("position", new THREE.Float32BufferAttribute(gp, 3));
 
         // Extruded regions. Shapes are drawn in the XY plane (x = lng, y = lat),
         // then rotated so latitude runs north into the screen and extrusion points up.
@@ -409,15 +507,15 @@ export default function StoryScene({
       const globeW = 1 - smooth(c, 0.75, 1.3);
       const mapW = smooth(c, 0.8, 1.35);
       globe.visible = globeW > 0.005;
-      globe.rotation.y = THREE.MathUtils.degToRad(1) - 1.4 * (1 - smooth(c, 0.2, 0.75)) + t * 0.02 * globeW;
+      globe.rotation.y = -1.4 * (1 - smooth(c, 0.2, 0.75)) + t * 0.02 * globeW;
       globe.scale.setScalar(1 + (1 - globeW) * 1.6);
-      fade(coreMat, globeW, 0.92);
-      fade(atmoMat, globeW, 0.12);
-      fade(dotMat, globeW, 0.55);
-      fade(ghanaDotMat, globeW);
-      const pulse = (t * 0.5) % 1;
-      marker.scale.setScalar(0.18 + pulse * 0.35);
-      fade(markerMat, globeW, reducedMotion ? 0.8 : 1 - pulse);
+      earthUniforms.opacity.value = globeW;
+      atmosUniforms.opacity.value = globeW;
+      const pulse = reducedMotion ? 0.4 : (t / 2.2) % 1;
+      beaconRing.scale.setScalar(1 + pulse * 3.2);
+      fade(beaconRingMat, globeW, (1 - pulse) * 0.8);
+      fade(beaconDotMat, globeW);
+      fade(beaconBeamMat, globeW, 0.4 + 0.15 * Math.sin(t * 2.4));
       if (satellite) {
         const a = t * 0.25 + 0.6;
         satellite.visible = globeW > 0.01;

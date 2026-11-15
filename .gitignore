@@ -44,6 +44,3 @@ next-env.d.ts
 /data/
 
 certificates
-# macOS
-.DS_Store
-!.env.example

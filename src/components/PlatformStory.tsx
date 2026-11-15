@@ -12,9 +12,12 @@ import { ArrowRight } from "lucide-react";
 import { CHAPTER_COUNT, chapterPosition } from "@/lib/story";
 import type { StoryData } from "@/components/StoryScene";
 import type { RegionLoss } from "@/lib/deforestation";
-import { FOREST_BELT_REGIONS } from "@/lib/forestBelt";
+import { predictHotspots, FOREST_BELT_REGIONS } from "@/lib/deforestationModel";
 import { recommendSites } from "@/lib/reforestation";
+import { loadTreeCover } from "@/lib/treeCover";
 import { fetchFires } from "@/lib/fires";
+import { fetchDetections } from "@/lib/acoustic";
+import { pointInGeometry } from "@/lib/geo";
 import { placeLabel, useNearestPlace } from "@/lib/places";
 
 const StoryScene = dynamic(() => import("@/components/StoryScene"), { ssr: false, loading: () => null });
@@ -70,16 +73,18 @@ const STATS = [
   { value: "1.1B", unit: "t", label: "CO2e released" },
 ];
 
-// Everything the 3D story shows, from live Global Forest Watch and NASA data.
-// (In this public version the pins mark the regions with the most clearing
-// right now; the private version uses the full risk model.)
+// Everything the 3D story shows, from the same live sources and model as the dashboard.
 async function buildStory(regions: RegionLoss[]): Promise<StoryData> {
-  const fires = await fetchFires().catch(() => null);
+  const [fires, detections, treeCoverAt, geo] = await Promise.all([
+    fetchFires().catch(() => null),
+    fetchDetections().catch(() => []),
+    loadTreeCover().catch(() => undefined),
+    fetch("/ghana_regions.geojson").then((r) => r.json()).catch(() => ({ features: [] })),
+  ]);
   const fireList = fires?.available ? fires.fires : [];
-  const hotspots = [...regions]
-    .filter((r) => r.recentAlertAreaHa > 0)
-    .sort((a, b) => b.recentAlertAreaHa - a.recentAlertAreaHa)
-    .slice(0, 5);
+  const features: { geometry: { type: string; coordinates: unknown } }[] = geo.features;
+  const insideGhana = (p: { lat: number; lng: number }) => features.length === 0 || features.some((f) => pointInGeometry(p, f.geometry));
+  const hotspots = predictHotspots(regions, { chainsaws: detections, fires: fireList }, insideGhana, 10, treeCoverAt);
   const maxLoss = Math.max(...regions.map((r) => r.totalLossKha2001to2024), 1);
   const sites = [...regions]
     .sort((a, b) => b.totalLossKha2001to2024 - a.totalLossKha2001to2024)
@@ -88,7 +93,7 @@ async function buildStory(regions: RegionLoss[]): Promise<StoryData> {
   return {
     hotspots: hotspots.map((h) => ({ lat: h.lat, lng: h.lng })),
     fires: fireList.filter((f) => FOREST_BELT_REGIONS.has(f.region)).map((f) => ({ lat: f.lat, lng: f.lng })),
-    listener: null,
+    listener: detections[0] ? { lat: detections[0].lat, lng: detections[0].lng } : null,
     sites: sites.map((s) => ({ lat: s.lat, lng: s.lng })),
   };
 }
@@ -99,9 +104,9 @@ function liveNote(i: number, story: StoryData | null, nearest: ReturnType<typeof
   const near = (p: { lat: number; lng: number }) => (nearest ? placeLabel(nearest(p)) : null);
   if (i === 2 && story.hotspots.length) {
     const top = story.hotspots.slice(0, 3).map(near).filter(Boolean);
-    return `Pins mark the ${story.hotspots.length} regions with the most clearing in the last 30 days.${top.length ? ` Highest: ${top.join("; ")}.` : ""}`;
+    return `Pins are the model's live top ${story.hotspots.length}.${top.length ? ` Highest: ${top.join("; ")}.` : ""}`;
   }
-  if (i === 3 && story.listener) {
+  if (i === 3) {
     return story.listener
       ? `The phone marks the latest real detection${near(story.listener) ? `, ${near(story.listener)}` : ""}.`
       : "No phones have reported a chainsaw yet, so no phone is shown on the map.";
@@ -110,6 +115,20 @@ function liveNote(i: number, story: StoryData | null, nearest: ReturnType<typeof
   if (i === 6 && story.sites.length) return `Groves mark ${story.sites.length} real recommended restoration sites in the five highest-loss regions.`;
   return null;
 }
+
+// Photos shown with chapter 1. Credit and licence: fill in before publishing.
+const PROBLEM_PHOTOS = [
+  {
+    src: "/images/felling-tree.jpg",
+    alt: "A man fells a large rainforest tree with a chainsaw.",
+    credit: "Photo: [credit]",
+  },
+  {
+    src: "/images/cutting-timber.jpg",
+    alt: "A young man cuts a felled tree into planks with a chainsaw.",
+    credit: "Photo: [credit]",
+  },
+];
 
 const SPECIES = ["Roloway monkey", "White-naped mangabey", "African forest elephant"];
 
@@ -219,6 +238,17 @@ export default function PlatformStory() {
                 transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
                 className="relative z-10 w-full max-w-md rounded-lg border border-white/10 bg-black/55 backdrop-blur-md p-6 md:p-8"
               >
+                {i === 0 && (
+                  <div className="mb-4 grid grid-cols-2 gap-2">
+                    {PROBLEM_PHOTOS.map((photo) => (
+                      <figure key={photo.src} className="relative overflow-hidden rounded-lg border border-white/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- local photo */}
+                        <img src={photo.src} alt={photo.alt} width={735} height={490} className="block aspect-[3/2] w-full object-cover" />
+                        <figcaption className="absolute bottom-0 right-0 rounded-tl-md bg-black/60 px-1.5 text-[11px] text-white/75">{photo.credit}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
                 <p className="font-mono text-xs uppercase tracking-widest text-[#F5C518] mb-3">
                   {String(i + 1).padStart(2, "0")} / {String(CHAPTER_COUNT).padStart(2, "0")} · {ch.label}
                 </p>
